@@ -1,0 +1,37 @@
+# i2L 架构训练配置 (SD 1.5 + DINOv2 + 逐层双层 MLP)
+pretrained_model_name_or_path: "pretrained_models/stable-diffusion-v1-5"
+
+train_data_meta: "data/metadata.jsonl"
+train_data_dir: "sampled_100styles_150pairs_package"
+resolution: 512
+
+# 标准 LoRA
+rank: 4
+network_alpha: 4.0
+lora_scale: 1.0
+
+# i2L 生成器
+hidden_dim: 512
+dinov2_model: "dinov2_vitb14"
+dinov2_model_path: "pretrained_models/dinov2-base"
+
+output_dir: "outputs/i2l_sd15"
+seed: 42
+train_batch_size: 16
+gradient_accumulation_steps: 1
+num_train_epochs: 10
+max_train_steps: -1
+learning_rate: 1.0e-4
+lr_scheduler: "cosine"
+lr_warmup_steps: 500
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_weight_decay: 0.01
+adam_epsilon: 1.0e-8
+max_grad_norm: 1.0
+mixed_precision: "fp16"
+text_drop_ratio: 0.1
+
+logging_steps: 50
+checkpointing_steps: 1000
+report_to: "tensorboard"

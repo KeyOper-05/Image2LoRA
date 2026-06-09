@@ -1,0 +1,19 @@
+# 大文件 / 本地数据
+data/
+outputs/
+pretrained_models/
+i2l_sd15/
+sampled_100styles_150pairs_package/
+
+# 参考代码（可选，体积较大）
+Video2LoRA/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 环境
+.env
+*.log
