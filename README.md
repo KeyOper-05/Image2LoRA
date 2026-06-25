@@ -112,7 +112,7 @@ run_python scripts/train.py \
 # 推理
 run_python scripts/infer.py \
     --pretrained_model pretrained_models/stable-diffusion-v1-5 \
-    --checkpoint_dir outputs/image2lora_sd15/checkpoint-1000 \
+    --checkpoint_dir pretrained_models/ckpt \
     --ref_image examples/ref.jpg \
     --prompt "a landscape painting" \
     --output outputs/result.png
@@ -184,9 +184,9 @@ Checkpoint 保存在 `outputs/image2lora_sd15/checkpoint-{step}/`，包含：
 ```bash
 source env.sh
 run_python scripts/infer.py \
-    --checkpoint_dir outputs/image2lora_sd15/checkpoint-1000 \
-    --ref_image path/to/style_ref.jpg \
-    --prompt "a mountain landscape in the style of the reference" \
+    --checkpoint_dir pretrained_models/ckpt \
+    --ref_image examples/ref.jpg \
+    --prompt "a handsome man in the style of the reference" \
     --output outputs/result.png \
     --num_inference_steps 30 \
     --guidance_scale 7.5
