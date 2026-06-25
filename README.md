@@ -192,6 +192,46 @@ run_python scripts/infer.py \
     --guidance_scale 7.5
 ```
 
+### 批量推理
+
+`scripts/batch_infer.py` 可以遍历内容图片和风格参考图片，以每个 style 为一组，
+为该 style 生成全体 caption 对应的图片，并写出结果 manifest。
+
+默认支持一个目录里同时放内容图和风格参考图：
+
+- 内容图：`类型_caption.ext`，例如 `ancientbuilding_A beautifully preserved Greek Parthenon at twilight.png`
+- 风格参考：`style____*.jpg`，例如 `s0055____1019_01_query_0_img_000004_1684018013820_07938481893127348.jpg`
+- 生成图：`内容图文件名&&风格参考文件名.jpg`
+
+```bash
+source env.sh
+run_python scripts/batch_infer.py \
+    --input_dir /path/to/images \
+    --output_dir outputs/batch_results \
+    --checkpoint_dir outputs/image2lora_sd15/checkpoint-1000
+```
+
+如果内容图和风格参考图在不同目录：
+
+```bash
+source env.sh
+run_python scripts/batch_infer.py \
+    --content_dir /path/to/content_images \
+    --style_dir /path/to/style_refs \
+    --output_dir outputs/batch_results \
+    --checkpoint_dir outputs/image2lora_sd15/checkpoint-1000
+```
+
+默认 prompt 直接使用内容图文件名里的 `caption`。如需追加风格描述，可传模板：
+
+```bash
+--prompt_template "{caption} in the style of the reference"
+```
+
+manifest 默认写到 `outputs/batch_results/manifest.json`，每条记录包含
+`content_image`、`content_type`、`caption`、`prompt`、`style_image`、`style`、
+`output_image` 和 `status`。正式生成前可先用 `--dry_run` 检查解析和命名。
+
 ## 项目结构
 
 ```
