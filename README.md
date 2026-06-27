@@ -232,6 +232,40 @@ manifest 默认写到 `outputs/batch_results/manifest.json`，每条记录包含
 `content_image`、`content_type`、`caption`、`prompt`、`style_image`、`style`、
 `output_image` 和 `status`。正式生成前可先用 `--dry_run` 检查解析和命名。
 
+### 批量评估
+
+`scripts/batch_eval.py` 使用和批量推理相同的分组要求：每个 style 都必须有全体
+caption 的生成图。它会按 style 分组计算 Style Loss 和 FID，并写出
+`batch_metrics_report.json`。
+
+使用批量推理的 manifest：
+
+```bash
+source env.sh
+run_python scripts/batch_eval.py \
+    --batch_manifest outputs/batch_results/manifest.json \
+    --output_dir outputs/batch_eval \
+    --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
+```
+
+或按目录和命名规则重新发现生成图：
+
+```bash
+source env.sh
+run_python scripts/batch_eval.py \
+    --input_dir /path/to/images \
+    --generated_dir outputs/batch_results \
+    --output_dir outputs/batch_eval \
+    --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
+```
+
+输出包括：
+
+- `outputs/batch_eval/batch_metrics_report.json`：每个 style 的 FID、Style Loss 摘要
+- `outputs/batch_eval/style_loss.csv`：逐张生成图的 Style Loss
+- `outputs/batch_eval/eval_manifest.jsonl`：传给指标计算的评估清单
+- `outputs/batch_eval/by_style/<style>/metrics_report.json`：单个 style 的完整报告
+
 ## 项目结构
 
 ```
