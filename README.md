@@ -234,9 +234,9 @@ manifest 默认写到 `outputs/batch_results/manifest.json`，每条记录包含
 
 ### 批量评估
 
-`scripts/batch_eval.py` 使用和批量推理相同的分组要求：每个 style 都必须有全体
-caption 的生成图。它会按 style 分组计算 Style Loss 和 FID，并写出
-`batch_metrics_report.json`。
+`scripts/batch_eval.py` 使用和批量推理相同的命名规则。默认会评估已经存在的生成图：
+某个 style 只要有 1 张生成图就参与评估，0 张生成图的 style 会被忽略。它会按
+style 分组计算 Style Loss 和 FID，并写出 `batch_metrics_report.json`。
 
 使用批量推理的 manifest：
 
@@ -257,6 +257,12 @@ run_python scripts/batch_eval.py \
     --generated_dir outputs/batch_results \
     --output_dir outputs/batch_eval \
     --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
+```
+
+如果需要严格检查每个 style 都有全体 caption 的生成图：
+
+```bash
+--require_complete
 ```
 
 输出包括：

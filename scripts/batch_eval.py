@@ -4,8 +4,8 @@
 This script follows scripts/batch_infer.py naming rules:
     content.ext&&style.ext.jpg
 
-For each style reference, it verifies that all captions have generated images,
-then computes Style Loss and FID for that style group.
+For each style reference, it evaluates the generated images that already exist.
+Styles with zero generated images are ignored by default.
 """
 
 from __future__ import annotations
@@ -105,7 +105,12 @@ def parse_args() -> argparse.Namespace:
     input_group.add_argument(
         "--allow_missing",
         action="store_true",
-        help="Evaluate available outputs even if a style is missing some captions.",
+        help="Deprecated no-op. Missing generated images are allowed by default.",
+    )
+    input_group.add_argument(
+        "--require_complete",
+        action="store_true",
+        help="Require every style to have generated images for every caption.",
     )
 
     output_group = parser.add_argument_group("outputs")
@@ -246,7 +251,7 @@ def load_cases_from_dirs(args: argparse.Namespace) -> list[BatchEvalCase]:
     return cases
 
 
-def check_caption_coverage(cases: list[BatchEvalCase], allow_missing: bool) -> list[BatchEvalCase]:
+def check_caption_coverage(cases: list[BatchEvalCase], require_complete: bool) -> list[BatchEvalCase]:
     expected_captions = sorted({case.caption for case in cases})
     by_style: dict[str, list[BatchEvalCase]] = defaultdict(list)
     for case in cases:
@@ -258,14 +263,17 @@ def check_caption_coverage(cases: list[BatchEvalCase], allow_missing: bool) -> l
         existing = [case for case in style_cases if case.generated.exists()]
         existing_captions = sorted({case.caption for case in existing})
         missing = sorted(set(expected_captions) - set(existing_captions))
-        if missing:
+        if missing and require_complete:
             errors.append(f"{style} missing {len(missing)} captions: {missing}")
         print(f"Style {style}: {len(existing_captions)}/{len(expected_captions)} caption images found", flush=True)
-        valid_cases.extend(existing if allow_missing else style_cases)
+        if existing:
+            valid_cases.extend(existing)
+        else:
+            print(f"Style {style}: skipped because no generated images were found", flush=True)
 
-    if errors and not allow_missing:
+    if errors:
         message = "\n".join(errors)
-        raise ValueError(f"Missing generated images. Re-run batch inference or pass --allow_missing.\n{message}")
+        raise ValueError(f"Missing generated images. Re-run batch inference or remove --require_complete.\n{message}")
     return valid_cases
 
 
@@ -396,13 +404,14 @@ def main() -> None:
     if not cases:
         raise ValueError("No generated cases found to evaluate.")
 
-    cases = check_caption_coverage(cases, args.allow_missing)
+    cases = check_caption_coverage(cases, args.require_complete)
+    if not cases:
+        raise ValueError("No generated images found to evaluate.")
     write_eval_manifest(eval_manifest, cases)
 
     by_style: dict[str, list[BatchEvalCase]] = defaultdict(list)
     for case in cases:
-        if case.generated.exists():
-            by_style[case.style].append(case)
+        by_style[case.style].append(case)
 
     all_eval_cases = validate_cases([to_eval_case(case) for case in cases if case.generated.exists()])
     style_args = argparse.Namespace(
