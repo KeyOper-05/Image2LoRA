@@ -120,6 +120,10 @@ the covariance estimate becomes degenerate and `pytorch-fid` can fail with NaNs.
 Override the threshold with `--fid_min_images` only if you know what you are
 doing.
 
+FID defaults to `--fid_batch_size 1` so mixed-resolution images do not fail
+during PyTorch collation. Increase it only when all images in both compared
+sets have the same dimensions.
+
 ### ArtFID Checkpoint
 
 Required for:

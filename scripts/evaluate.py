@@ -138,6 +138,12 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Skip FID when either image set has fewer images than this.",
     )
+    parser.add_argument(
+        "--fid_batch_size",
+        type=int,
+        default=1,
+        help="Batch size for pytorch-fid. Use 1 when image sizes differ.",
+    )
     parser.add_argument("--skip_style_loss", action="store_true", help="Skip VGG style loss.")
     parser.add_argument("--skip_content_metrics", action="store_true", help="Skip SSIM, LPIPS, and ArtFID.")
     parser.add_argument("--style_loss_image_size", type=int, default=256, help="Resize/crop size for VGG style loss.")
@@ -380,12 +386,23 @@ def compute_fid(
     device: str,
     fid_weights: Path | None = None,
     min_images: int = 2,
+    batch_size: int = 1,
 ) -> dict[str, dict[str, Any]]:
     results = {}
     fid_env, skip_reason = prepare_fid_env(fid_weights)
     style_count = count_images(style_dir)
     for method, dirs in sorted(method_dirs.items()):
-        command = [sys.executable, "-m", "pytorch_fid", str(dirs["generated"]), str(style_dir), "--device", device]
+        command = [
+            sys.executable,
+            "-m",
+            "pytorch_fid",
+            str(dirs["generated"]),
+            str(style_dir),
+            "--device",
+            device,
+            "--batch-size",
+            str(batch_size),
+        ]
         generated_count = count_images(dirs["generated"])
         if generated_count < min_images or style_count < min_images:
             results[method] = {
@@ -739,6 +756,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             args.device,
             args.fid_weights,
             args.fid_min_images,
+            args.fid_batch_size,
         )
 
     if args.skip_content_metrics:

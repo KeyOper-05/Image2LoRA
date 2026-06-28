@@ -145,6 +145,12 @@ def parse_args() -> argparse.Namespace:
         default=2,
         help="Skip FID when either image set has fewer images than this.",
     )
+    metric_group.add_argument(
+        "--fid_batch_size",
+        type=int,
+        default=1,
+        help="Batch size for pytorch-fid. Use 1 when image sizes differ.",
+    )
     metric_group.add_argument("--style_loss_image_size", type=int, default=256)
     metric_group.add_argument(
         "--style_loss_vgg_weights",
@@ -438,6 +444,7 @@ def evaluate_style_group(
             args.device,
             args.fid_weights,
             args.fid_min_images,
+            args.fid_batch_size,
         )
     style_style_loss_result = filter_style_loss_result(style_loss_result, style)
 

@@ -272,6 +272,7 @@ FID 使用 `pytorch-fid` 的 Inception 权重，文件名为
 `pt_inception-2015-12-05-6726825d.pth`。建议提前下载到
 `pretrained_models/metrics/` 并通过 `--fid_weights` 传入，避免评估时联网下载。
 如果某个 style 的生成图或参考图少于 2 张，FID 会被跳过以避免协方差退化。
+FID 默认使用 `--fid_batch_size 1` 以兼容不同分辨率图片；若图片尺寸完全一致，可调大该值提速。
 如果只想快速计算 Style Loss，可加 `--skip_fid`。
 
 如果需要严格检查每个 style 都有全体 caption 的生成图：
