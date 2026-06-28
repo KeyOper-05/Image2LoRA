@@ -336,6 +336,12 @@ def parse_last_float(text: str) -> float | None:
     return float(matches[-1]) if matches else None
 
 
+def parse_pytorch_fid_value(text: str) -> float | None:
+    number = r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
+    matches = re.findall(rf"\bFID\s*:\s*({number})", text)
+    return float(matches[-1]) if matches else None
+
+
 def count_images(path: Path) -> int:
     return sum(1 for child in path.iterdir() if child.is_file() and child.suffix.lower() in IMAGE_EXTS)
 
@@ -429,7 +435,7 @@ def compute_fid(
             continue
 
         code, output = run_command(command, env=fid_env)
-        value = parse_last_float(output) if code == 0 else None
+        value = parse_pytorch_fid_value(output) if code == 0 else None
         results[method] = {
             "value": value,
             "status": "ok" if value is not None else "skipped",
@@ -438,6 +444,8 @@ def compute_fid(
         }
         if code != 0:
             results[method]["install"] = METRIC_CATALOG["fid"]["install"]
+        elif value is None:
+            results[method]["reason"] = "Could not parse a 'FID: <value>' line from pytorch-fid output."
     return results
 
 
