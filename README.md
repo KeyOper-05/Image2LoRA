@@ -246,6 +246,7 @@ source env.sh
 run_python scripts/batch_eval.py \
     --batch_manifest outputs/batch_results/manifest.json \
     --output_dir outputs/batch_eval \
+    --fid_style_ref_dir /path/to/fid_style_refs \
     --fid_weights pretrained_models/metrics/pt_inception-2015-12-05-6726825d.pth \
     --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
 ```
@@ -258,13 +259,19 @@ run_python scripts/batch_eval.py \
     --input_dir /path/to/images \
     --generated_dir outputs/batch_results \
     --output_dir outputs/batch_eval \
+    --fid_style_ref_dir /path/to/fid_style_refs \
     --fid_weights pretrained_models/metrics/pt_inception-2015-12-05-6726825d.pth \
     --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
 ```
 
+如果 FID 的参考图在单独目录中，文件名可形如
+`ancientbuilding_A beautifully preserved Greek Parthenon at twilight.png&&s0172____1107_01_query_1_img_000018_1683099425957_08968873238001791.jpg.jpg.png`。
+脚本会从 `&&` 后提取 style 前缀，并把同一 style 下的这些图片作为 FID reference set。
+
 FID 使用 `pytorch-fid` 的 Inception 权重，文件名为
 `pt_inception-2015-12-05-6726825d.pth`。建议提前下载到
 `pretrained_models/metrics/` 并通过 `--fid_weights` 传入，避免评估时联网下载。
+如果某个 style 的生成图或参考图少于 2 张，FID 会被跳过以避免协方差退化。
 如果只想快速计算 Style Loss，可加 `--skip_fid`。
 
 如果需要严格检查每个 style 都有全体 caption 的生成图：

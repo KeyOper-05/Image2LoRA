@@ -115,6 +115,11 @@ The evaluation script checks for local FID weights before calling
 `pytorch-fid`, so it will not trigger an implicit GitHub download during metric
 calculation.
 
+FID is skipped when either compared image set has fewer than 2 images, because
+the covariance estimate becomes degenerate and `pytorch-fid` can fail with NaNs.
+Override the threshold with `--fid_min_images` only if you know what you are
+doing.
+
 ### ArtFID Checkpoint
 
 Required for:

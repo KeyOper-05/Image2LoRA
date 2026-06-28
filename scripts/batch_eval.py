@@ -27,6 +27,8 @@ from scripts.evaluate import (  # noqa: E402
     EvalCase,
     compute_fid,
     compute_style_loss,
+    link_or_copy,
+    reset_dir,
     stage_metric_dirs,
     summarize_style_loss,
     validate_cases,
@@ -95,6 +97,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Folder containing generated images named content.ext&&style.ext.jpg.",
     )
+    input_group.add_argument(
+        "--fid_style_ref_dir",
+        type=Path,
+        default=None,
+        help="Optional FID reference folder containing files named content.ext&&style____*.ext.",
+    )
     input_group.add_argument("--recursive", action="store_true", help="Search content/style folders recursively.")
     input_group.add_argument(
         "--prompt_template",
@@ -131,6 +139,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional local pytorch-fid Inception weights. Avoids network download.",
     )
+    metric_group.add_argument(
+        "--fid_min_images",
+        type=int,
+        default=2,
+        help="Skip FID when either image set has fewer images than this.",
+    )
     metric_group.add_argument("--style_loss_image_size", type=int, default=256)
     metric_group.add_argument(
         "--style_loss_vgg_weights",
@@ -161,10 +175,27 @@ def iter_image_files(folder: Path, recursive: bool) -> list[Path]:
     )
 
 
+def iter_all_image_files(folder: Path, recursive: bool) -> list[Path]:
+    pattern = "**/*" if recursive else "*"
+    return sorted(path for path in folder.glob(pattern) if path.is_file() and path.suffix.lower() in IMAGE_EXTS)
+
+
 def parse_style(path: Path) -> StyleImage | None:
     if "____" not in path.stem:
         return None
     style, _rest = path.stem.split("____", 1)
+    if not style:
+        return None
+    return StyleImage(path=path, style=style)
+
+
+def parse_fid_style_ref(path: Path) -> StyleImage | None:
+    if "&&" not in path.name:
+        return None
+    _content_name, style_name = path.name.split("&&", 1)
+    if "____" not in style_name:
+        return None
+    style, _rest = style_name.split("____", 1)
     if not style:
         return None
     return StyleImage(path=path, style=style)
@@ -258,6 +289,24 @@ def load_cases_from_dirs(args: argparse.Namespace) -> list[BatchEvalCase]:
     return cases
 
 
+def load_fid_style_refs(args: argparse.Namespace) -> dict[str, list[Path]]:
+    if args.fid_style_ref_dir is None:
+        return {}
+
+    ref_dir = resolve_path(args.fid_style_ref_dir)
+    refs_by_style: dict[str, list[Path]] = defaultdict(list)
+    for path in iter_all_image_files(ref_dir, args.recursive):
+        ref = parse_fid_style_ref(path)
+        if ref is not None:
+            refs_by_style[ref.style].append(ref.path)
+    if not refs_by_style:
+        raise ValueError(
+            f"No FID style reference images found in {ref_dir}. "
+            "Expected filenames like content.ext&&style____*.ext"
+        )
+    return {style: sorted(paths) for style, paths in refs_by_style.items()}
+
+
 def check_caption_coverage(cases: list[BatchEvalCase], require_complete: bool) -> list[BatchEvalCase]:
     by_style: dict[str, list[BatchEvalCase]] = defaultdict(list)
     for case in cases:
@@ -339,9 +388,33 @@ def filter_style_loss_result(style_loss_result: dict[str, Any], style: str) -> d
     return filtered
 
 
+def stage_fid_dirs(
+    style: str,
+    eval_cases: list[EvalCase],
+    fid_style_refs: list[Path],
+    output_dir: Path,
+    copy_inputs: bool,
+) -> dict[str, Any]:
+    stage_root = output_dir / "_metric_inputs"
+    reset_dir(stage_root)
+    style_dir = stage_root / "style_refs"
+    gen_dir = stage_root / f"generated_{style}"
+    style_dir.mkdir(parents=True, exist_ok=True)
+    gen_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, style_ref in enumerate(sorted(set(fid_style_refs))):
+        link_or_copy(style_ref, style_dir / f"{idx:06d}{style_ref.suffix.lower()}", copy_inputs)
+
+    for idx, case in enumerate(eval_cases):
+        link_or_copy(case.generated, gen_dir / f"{idx:06d}{case.generated.suffix.lower()}", copy_inputs)
+
+    return {"stage_root": stage_root, "style": style_dir, "methods": {style: {"generated": gen_dir}}}
+
+
 def evaluate_style_group(
     style: str,
     cases: list[BatchEvalCase],
+    fid_style_refs: list[Path] | None,
     style_loss_result: dict[str, Any],
     args: argparse.Namespace,
     output_dir: Path,
@@ -350,16 +423,28 @@ def evaluate_style_group(
     style_output_dir = output_dir / "by_style" / style
     style_output_dir.mkdir(parents=True, exist_ok=True)
 
-    staged = stage_metric_dirs(eval_cases, style_output_dir, args.copy_inputs)
     if args.skip_fid:
         fid_result = {style: {"status": "skipped", "reason": "--skip_fid"}}
+    elif fid_style_refs is not None and not fid_style_refs:
+        fid_result = {style: {"status": "skipped", "reason": f"No FID style references found for style {style}"}}
     else:
-        fid_result = compute_fid(staged["style"], staged["methods"], args.device, args.fid_weights)
+        if fid_style_refs is None:
+            staged = stage_metric_dirs(eval_cases, style_output_dir, args.copy_inputs)
+        else:
+            staged = stage_fid_dirs(style, eval_cases, fid_style_refs, style_output_dir, args.copy_inputs)
+        fid_result = compute_fid(
+            staged["style"],
+            staged["methods"],
+            args.device,
+            args.fid_weights,
+            args.fid_min_images,
+        )
     style_style_loss_result = filter_style_loss_result(style_loss_result, style)
 
     style_report = {
         "style": style,
         "style_ref": str(cases[0].style_ref),
+        "fid_style_refs": [str(path) for path in fid_style_refs] if fid_style_refs is not None else None,
         "num_cases": len(eval_cases),
         "metrics": {
             "fid": fid_result,
@@ -423,6 +508,7 @@ def main() -> None:
     if not cases:
         raise ValueError("No generated cases found to evaluate.")
 
+    fid_refs_by_style = load_fid_style_refs(args)
     cases = check_caption_coverage(cases, args.require_complete)
     if not cases:
         raise ValueError("No generated images found to evaluate.")
@@ -444,7 +530,8 @@ def main() -> None:
     style_reports = []
     for style, style_cases in sorted(by_style.items()):
         print(f"Evaluating style {style}: {len(style_cases)} caption images", flush=True)
-        style_reports.append(evaluate_style_group(style, style_cases, style_loss_result, args, output_dir))
+        fid_style_refs = fid_refs_by_style.get(style, []) if args.fid_style_ref_dir is not None else None
+        style_reports.append(evaluate_style_group(style, style_cases, fid_style_refs, style_loss_result, args, output_dir))
 
     style_loss_rows = aggregate_style_loss_rows(style_reports)
     write_style_loss_csv(style_loss_rows, output_dir / "style_loss.csv")

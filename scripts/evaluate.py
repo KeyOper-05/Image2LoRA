@@ -132,6 +132,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional local pytorch-fid Inception weights. Avoids network download.",
     )
+    parser.add_argument(
+        "--fid_min_images",
+        type=int,
+        default=2,
+        help="Skip FID when either image set has fewer images than this.",
+    )
     parser.add_argument("--skip_style_loss", action="store_true", help="Skip VGG style loss.")
     parser.add_argument("--skip_content_metrics", action="store_true", help="Skip SSIM, LPIPS, and ArtFID.")
     parser.add_argument("--style_loss_image_size", type=int, default=256, help="Resize/crop size for VGG style loss.")
@@ -324,6 +330,10 @@ def parse_last_float(text: str) -> float | None:
     return float(matches[-1]) if matches else None
 
 
+def count_images(path: Path) -> int:
+    return sum(1 for child in path.iterdir() if child.is_file() and child.suffix.lower() in IMAGE_EXTS)
+
+
 def default_torch_checkpoint_path() -> Path:
     return (
         Path(os.environ.get("TORCH_HOME", Path.home() / ".cache" / "torch"))
@@ -369,11 +379,28 @@ def compute_fid(
     method_dirs: dict[str, dict[str, Path]],
     device: str,
     fid_weights: Path | None = None,
+    min_images: int = 2,
 ) -> dict[str, dict[str, Any]]:
     results = {}
     fid_env, skip_reason = prepare_fid_env(fid_weights)
+    style_count = count_images(style_dir)
     for method, dirs in sorted(method_dirs.items()):
         command = [sys.executable, "-m", "pytorch_fid", str(dirs["generated"]), str(style_dir), "--device", device]
+        generated_count = count_images(dirs["generated"])
+        if generated_count < min_images or style_count < min_images:
+            results[method] = {
+                "value": None,
+                "status": "skipped",
+                "command": " ".join(command),
+                "message": (
+                    f"FID requires at least {min_images} images in both sets to avoid degenerate covariance. "
+                    f"Found generated={generated_count}, style_refs={style_count}."
+                ),
+                "num_generated": generated_count,
+                "num_style_refs": style_count,
+            }
+            continue
+
         if skip_reason is not None:
             results[method] = {
                 "value": None,
@@ -706,7 +733,13 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     if args.skip_fid:
         report["metrics"]["fid"] = {"status": "skipped", "reason": "--skip_fid"}
     else:
-        report["metrics"]["fid"] = compute_fid(staged["style"], staged["methods"], args.device, args.fid_weights)
+        report["metrics"]["fid"] = compute_fid(
+            staged["style"],
+            staged["methods"],
+            args.device,
+            args.fid_weights,
+            args.fid_min_images,
+        )
 
     if args.skip_content_metrics:
         for metric_name in ("ssim", "lpips", "artfid"):
