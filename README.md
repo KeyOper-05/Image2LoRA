@@ -288,6 +288,20 @@ FID 默认使用 `--fid_batch_size 1` 以兼容不同分辨率图片；若图片
 - `outputs/batch_eval/eval_manifest.jsonl`：传给指标计算的评估清单
 - `outputs/batch_eval/by_style/<style>/metrics_report.json`：单个 style 的完整报告
 
+### FID 参考集 Baseline
+
+如果要估计同一 style 参考集自身的 FID baseline，可把该 style 的所有参考图随机分成两组再计算 FID：
+
+```bash
+source env.sh
+run_python scripts/fid_ref_baseline.py \
+    --fid_style_ref_dir /path/to/fid_style_refs \
+    --output_dir outputs/fid_ref_baseline \
+    --fid_weights pretrained_models/metrics/pt_inception-2015-12-05-6726825d.pth
+```
+
+输入文件名格式同 `--fid_style_ref_dir`：`content.ext&&style____*.ext`。默认每个 style 随机切分一次，可用 `--num_splits` 多次采样。
+
 ## 项目结构
 
 ```
