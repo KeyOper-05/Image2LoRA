@@ -124,6 +124,13 @@ def parse_args() -> argparse.Namespace:
 
     metric_group = parser.add_argument_group("metrics")
     metric_group.add_argument("--device", default="cuda", help="Device string for metrics.")
+    metric_group.add_argument("--skip_fid", action="store_true", help="Skip pytorch-fid.")
+    metric_group.add_argument(
+        "--fid_weights",
+        type=Path,
+        default=None,
+        help="Optional local pytorch-fid Inception weights. Avoids network download.",
+    )
     metric_group.add_argument("--style_loss_image_size", type=int, default=256)
     metric_group.add_argument(
         "--style_loss_vgg_weights",
@@ -252,7 +259,6 @@ def load_cases_from_dirs(args: argparse.Namespace) -> list[BatchEvalCase]:
 
 
 def check_caption_coverage(cases: list[BatchEvalCase], require_complete: bool) -> list[BatchEvalCase]:
-    expected_captions = sorted({case.caption for case in cases})
     by_style: dict[str, list[BatchEvalCase]] = defaultdict(list)
     for case in cases:
         by_style[case.style].append(case)
@@ -261,11 +267,21 @@ def check_caption_coverage(cases: list[BatchEvalCase], require_complete: bool) -
     errors = []
     for style, style_cases in sorted(by_style.items()):
         existing = [case for case in style_cases if case.generated.exists()]
-        existing_captions = sorted({case.caption for case in existing})
-        missing = sorted(set(expected_captions) - set(existing_captions))
+        missing = [case for case in style_cases if not case.generated.exists()]
         if missing and require_complete:
-            errors.append(f"{style} missing {len(missing)} captions: {missing}")
-        print(f"Style {style}: {len(existing_captions)}/{len(expected_captions)} caption images found", flush=True)
+            missing_outputs = [case.generated.name for case in missing[:20]]
+            suffix = f" ... and {len(missing) - 20} more" if len(missing) > 20 else ""
+            errors.append(f"{style} missing {len(missing)} generated images: {missing_outputs}{suffix}")
+
+        expected_refs = len({case.style_ref for case in style_cases})
+        expected_captions = len({case.caption for case in style_cases})
+        existing_refs = len({case.style_ref for case in existing})
+        existing_captions = len({case.caption for case in existing})
+        print(
+            f"Style {style}: {len(existing)}/{len(style_cases)} generated images found "
+            f"({existing_refs}/{expected_refs} refs, {existing_captions}/{expected_captions} captions)",
+            flush=True,
+        )
         if existing:
             valid_cases.extend(existing)
         else:
@@ -335,7 +351,10 @@ def evaluate_style_group(
     style_output_dir.mkdir(parents=True, exist_ok=True)
 
     staged = stage_metric_dirs(eval_cases, style_output_dir, args.copy_inputs)
-    fid_result = compute_fid(staged["style"], staged["methods"], args.device)
+    if args.skip_fid:
+        fid_result = {style: {"status": "skipped", "reason": "--skip_fid"}}
+    else:
+        fid_result = compute_fid(staged["style"], staged["methods"], args.device, args.fid_weights)
     style_style_loss_result = filter_style_loss_result(style_loss_result, style)
 
     style_report = {

@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,8 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 DEFAULT_GENERATED_NAMES = ("output.png", "baseline.png")
 DEFAULT_CONTENT_NAMES = ("content.png", "content.jpg", "content.jpeg")
 TORCHVISION_VGG19_IMAGENET1K_V1_FILENAME = "vgg19-dcbb9e9d.pth"
+FID_INCEPTION_FILENAME = "pt_inception-2015-12-05-6726825d.pth"
+FID_INCEPTION_URL = "https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth"
 
 METRIC_CATALOG: dict[str, dict[str, Any]] = {
     "ssim": {
@@ -123,6 +126,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda", help="Device string forwarded to metric packages.")
     parser.add_argument("--lpips_net", default="alex", choices=["alex", "vgg", "squeeze"], help="LPIPS backbone.")
     parser.add_argument("--skip_fid", action="store_true", help="Skip pytorch-fid.")
+    parser.add_argument(
+        "--fid_weights",
+        type=Path,
+        default=None,
+        help="Optional local pytorch-fid Inception weights. Avoids network download.",
+    )
     parser.add_argument("--skip_style_loss", action="store_true", help="Skip VGG style loss.")
     parser.add_argument("--skip_content_metrics", action="store_true", help="Skip SSIM, LPIPS, and ArtFID.")
     parser.add_argument("--style_loss_image_size", type=int, default=256, help="Resize/crop size for VGG style loss.")
@@ -302,9 +311,9 @@ def stage_metric_dirs(cases: list[EvalCase], output_dir: Path, copy_inputs: bool
     return {"stage_root": stage_root, "style": style_dir, "methods": method_dirs}
 
 
-def run_command(command: list[str]) -> tuple[int, str]:
+def run_command(command: list[str], env: dict[str, str] | None = None) -> tuple[int, str]:
     try:
-        completed = subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        completed = subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
     except FileNotFoundError as exc:
         return 127, str(exc)
     return completed.returncode, completed.stdout
@@ -315,11 +324,67 @@ def parse_last_float(text: str) -> float | None:
     return float(matches[-1]) if matches else None
 
 
-def compute_fid(style_dir: Path, method_dirs: dict[str, dict[str, Path]], device: str) -> dict[str, dict[str, Any]]:
+def default_torch_checkpoint_path() -> Path:
+    return (
+        Path(os.environ.get("TORCH_HOME", Path.home() / ".cache" / "torch"))
+        / "hub"
+        / "checkpoints"
+        / FID_INCEPTION_FILENAME
+    )
+
+
+def prepare_fid_env(fid_weights: Path | None) -> tuple[dict[str, str] | None, str | None]:
+    if fid_weights is None:
+        cache_path = default_torch_checkpoint_path()
+        if cache_path.exists():
+            return None, None
+        return (
+            None,
+            f"Missing cached FID Inception weights: {cache_path}. "
+            f"Download {FID_INCEPTION_URL} to that path, or pass --fid_weights /path/to/{FID_INCEPTION_FILENAME}.",
+        )
+
+    weights_path = resolve_path(fid_weights)
+    if not weights_path.exists():
+        return None, f"Missing --fid_weights file: {weights_path}"
+
+    fid_torch_home = Path(tempfile.gettempdir()) / "imagelora_fid_torch_home"
+    checkpoint_dir = fid_torch_home / "hub" / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    cached_file = checkpoint_dir / FID_INCEPTION_FILENAME
+    if cached_file.exists() or cached_file.is_symlink():
+        cached_file.unlink()
+    try:
+        os.symlink(weights_path, cached_file)
+    except OSError:
+        shutil.copy2(weights_path, cached_file)
+
+    env = os.environ.copy()
+    env["TORCH_HOME"] = str(fid_torch_home)
+    return env, None
+
+
+def compute_fid(
+    style_dir: Path,
+    method_dirs: dict[str, dict[str, Path]],
+    device: str,
+    fid_weights: Path | None = None,
+) -> dict[str, dict[str, Any]]:
     results = {}
+    fid_env, skip_reason = prepare_fid_env(fid_weights)
     for method, dirs in sorted(method_dirs.items()):
         command = [sys.executable, "-m", "pytorch_fid", str(dirs["generated"]), str(style_dir), "--device", device]
-        code, output = run_command(command)
+        if skip_reason is not None:
+            results[method] = {
+                "value": None,
+                "status": "skipped",
+                "command": " ".join(command),
+                "message": skip_reason,
+                "weights_url": FID_INCEPTION_URL,
+            }
+            continue
+
+        code, output = run_command(command, env=fid_env)
         value = parse_last_float(output) if code == 0 else None
         results[method] = {
             "value": value,
@@ -641,7 +706,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     if args.skip_fid:
         report["metrics"]["fid"] = {"status": "skipped", "reason": "--skip_fid"}
     else:
-        report["metrics"]["fid"] = compute_fid(staged["style"], staged["methods"], args.device)
+        report["metrics"]["fid"] = compute_fid(staged["style"], staged["methods"], args.device, args.fid_weights)
 
     if args.skip_content_metrics:
         for metric_name in ("ssim", "lpips", "artfid"):

@@ -236,7 +236,8 @@ manifest 默认写到 `outputs/batch_results/manifest.json`，每条记录包含
 
 `scripts/batch_eval.py` 使用和批量推理相同的命名规则。默认会评估已经存在的生成图：
 某个 style 只要有 1 张生成图就参与评估，0 张生成图的 style 会被忽略。它会按
-style 分组计算 Style Loss 和 FID，并写出 `batch_metrics_report.json`。
+style 分组计算 Style Loss 和 FID，并写出 `batch_metrics_report.json`。同一
+style 前缀下的多张参考图会合并为该 style 的 FID 参考集合。
 
 使用批量推理的 manifest：
 
@@ -245,6 +246,7 @@ source env.sh
 run_python scripts/batch_eval.py \
     --batch_manifest outputs/batch_results/manifest.json \
     --output_dir outputs/batch_eval \
+    --fid_weights pretrained_models/metrics/pt_inception-2015-12-05-6726825d.pth \
     --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
 ```
 
@@ -256,8 +258,14 @@ run_python scripts/batch_eval.py \
     --input_dir /path/to/images \
     --generated_dir outputs/batch_results \
     --output_dir outputs/batch_eval \
+    --fid_weights pretrained_models/metrics/pt_inception-2015-12-05-6726825d.pth \
     --style_loss_vgg_weights pretrained_models/metrics/vgg19-dcbb9e9d.pth
 ```
+
+FID 使用 `pytorch-fid` 的 Inception 权重，文件名为
+`pt_inception-2015-12-05-6726825d.pth`。建议提前下载到
+`pretrained_models/metrics/` 并通过 `--fid_weights` 传入，避免评估时联网下载。
+如果只想快速计算 Style Loss，可加 `--skip_fid`。
 
 如果需要严格检查每个 style 都有全体 caption 的生成图：
 

@@ -102,6 +102,19 @@ curl -L \
   https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth
 ```
 
+Alternatively, place it anywhere and pass it explicitly:
+
+```bash
+python scripts/evaluate.py \
+  --cases_dir image_in_ppt \
+  --output_dir outputs/eval \
+  --fid_weights pretrained_models/metrics/pt_inception-2015-12-05-6726825d.pth
+```
+
+The evaluation script checks for local FID weights before calling
+`pytorch-fid`, so it will not trigger an implicit GitHub download during metric
+calculation.
+
 ### ArtFID Checkpoint
 
 Required for:
