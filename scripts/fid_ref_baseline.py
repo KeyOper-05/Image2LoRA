@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recursive", action="store_true", help="Search reference folder recursively.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed used for style splits.")
     parser.add_argument("--num_splits", type=int, default=1, help="Number of random splits per style.")
+    parser.add_argument(
+        "--include_self_check",
+        action="store_true",
+        help="Also compute FID for each style reference set against itself. This should be near 0.",
+    )
     parser.add_argument("--device", default="cuda", help="Device string forwarded to pytorch-fid.")
     parser.add_argument(
         "--fid_weights",
@@ -123,7 +128,8 @@ def stage_split_dirs(
     output_dir: Path,
     copy_inputs: bool,
 ) -> dict[str, Any]:
-    split_dir = output_dir / "by_style" / safe_name(style) / f"split_{split_idx:03d}"
+    split_name = "self_check" if split_idx < 0 else f"split_{split_idx:03d}"
+    split_dir = output_dir / "by_style" / safe_name(style) / split_name
     stage_root = split_dir / "_metric_inputs"
     reset_dir(stage_root)
     group_a_dir = stage_root / "reference_group_a"
@@ -142,6 +148,25 @@ def stage_split_dirs(
         "group_b": group_b_dir,
         "methods": {style: {"generated": group_a_dir}},
     }
+
+
+def compute_reference_self_check(style: str, refs: list[Path], args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    staged = stage_split_dirs(style, -1, refs, refs, output_dir, args.copy_inputs)
+    fid = compute_fid(
+        staged["group_b"],
+        staged["methods"],
+        args.device,
+        args.fid_weights,
+        args.fid_min_images,
+        args.fid_batch_size,
+    )
+    result = {
+        "num_refs": len(refs),
+        "fid": fid,
+    }
+    with (staged["split_dir"] / "metrics_report.json").open("w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2, ensure_ascii=False)
+    return result
 
 
 def summarize_style_trials(trials: list[dict[str, Any]], style: str) -> dict[str, Any]:
@@ -168,6 +193,7 @@ def main() -> None:
         "fid_style_ref_dir": str(ref_dir),
         "seed": args.seed,
         "num_splits": args.num_splits,
+        "include_self_check": args.include_self_check,
         "fid_min_images": args.fid_min_images,
         "fid_batch_size": args.fid_batch_size,
         "metrics": {"by_style": {}},
@@ -204,6 +230,8 @@ def main() -> None:
             "trials": trials,
             "summary": summarize_style_trials(trials, style),
         }
+        if args.include_self_check:
+            report["metrics"]["by_style"][style]["self_check"] = compute_reference_self_check(style, refs, args, output_dir)
 
     report_path = output_dir / "fid_ref_baseline_report.json"
     with report_path.open("w", encoding="utf-8") as f:
