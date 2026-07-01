@@ -8,7 +8,7 @@ packages and checkpoints before running it.
 
 | Metric | Content image dependency | Computed by `scripts/evaluate.py` | Implementation |
 |---|---|---:|---|
-| `Style Loss` | Not needed | Yes | Local implementation of the Gatys/Johnson VGG Gram loss and AdaIN mean/std loss |
+| `Style Loss` | Not needed | Yes | `style_loss_gram` uses the original Gatys VGG Gram formula; `style_loss_adain` is an extra AdaIN mean/std statistic |
 | `FID` | Not needed | Yes | Calls `pytorch-fid` |
 | `SSIM` | Required | Yes, only when content images are supplied | Calls `skimage.metrics.structural_similarity` |
 | `LPIPS` | Required for content fidelity | Yes, only when content images are supplied | Calls `lpips` |
@@ -232,5 +232,6 @@ python scripts/evaluate.py \
 
 - Lower is better for `style_loss_gram`, `style_loss_adain`, `FID`, `LPIPS`, and `ArtFID`.
 - Higher is better for `SSIM`.
+- `style_loss_gram` follows the original Gatys formula: `sum_l w_l * E_l`, `E_l = 1 / (4 * N_l^2 * M_l^2) * sum_ij((G_l - A_l)^2)`, with VGG `conv1_1` through `conv5_1`, equal layer weight `w_l = 1/5`, and average pooling on the Gatys feature path.
 - FID is distribution-level and is weak with very small image sets. Use enough generated images and style references when possible.
 - `Style Loss` is computed per generated image against its paired style reference, so it works in the current no-content setting.

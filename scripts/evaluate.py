@@ -46,6 +46,11 @@ DEFAULT_CONTENT_NAMES = ("content.png", "content.jpg", "content.jpeg")
 TORCHVISION_VGG19_IMAGENET1K_V1_FILENAME = "vgg19-dcbb9e9d.pth"
 FID_INCEPTION_FILENAME = "pt_inception-2015-12-05-6726825d.pth"
 FID_INCEPTION_URL = "https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth"
+GATYS_STYLE_LAYER_IDS = {0, 5, 10, 19, 28}
+GATYS_STYLE_LAYER_NAMES = ["conv1_1", "conv2_1", "conv3_1", "conv4_1", "conv5_1"]
+GATYS_STYLE_LAYER_WEIGHT = 1.0 / len(GATYS_STYLE_LAYER_NAMES)
+ADAIN_STYLE_LAYER_IDS = {1, 6, 11, 20, 29}
+ADAIN_STYLE_LAYER_NAMES = ["relu1_1", "relu2_1", "relu3_1", "relu4_1", "relu5_1"]
 
 METRIC_CATALOG: dict[str, dict[str, Any]] = {
     "ssim": {
@@ -82,12 +87,12 @@ METRIC_CATALOG: dict[str, dict[str, Any]] = {
         "implementation": "Implemented here from the paper definition because no standalone standard metric package was found.",
         "install": "pip install torch torchvision pillow",
         "source": [
-            "https://github.com/jcjohnson/fast-neural-style",
+            "https://arxiv.org/abs/1508.06576",
             "https://github.com/xunhuang1995/AdaIN-style",
         ],
         "variants": {
-            "gram": "Gatys/Johnson-style Gram matrix MSE over VGG relu1_1..relu5_1.",
-            "adain": "AdaIN-style VGG channel mean/std MSE over the same layers.",
+            "gram": "Original Gatys style loss over VGG conv1_1..conv5_1 with equal layer weights.",
+            "adain": "AdaIN-style VGG channel mean/std MSE over relu1_1..relu5_1.",
         },
     },
 }
@@ -589,12 +594,17 @@ def load_vgg19_features(weights_path: Path | None, device: Any) -> Any:
     return model.features.to(device).eval()
 
 
-def extract_vgg_style_features(vgg_features: Any, tensor: Any) -> list[Any]:
-    layer_ids = {1, 6, 11, 20, 29}
+def extract_vgg_features(vgg_features: Any, tensor: Any, layer_ids: set[int], use_avg_pool: bool = False) -> list[Any]:
+    import torch.nn as nn
+    import torch.nn.functional as F
+
     features = []
     h = tensor
     for idx, layer in enumerate(vgg_features):
-        h = layer(h)
+        if use_avg_pool and isinstance(layer, nn.MaxPool2d):
+            h = F.avg_pool2d(h, layer.kernel_size, layer.stride, layer.padding, ceil_mode=layer.ceil_mode)
+        else:
+            h = layer(h)
         if idx in layer_ids:
             features.append(h)
         if idx >= max(layer_ids):
@@ -605,18 +615,31 @@ def extract_vgg_style_features(vgg_features: Any, tensor: Any) -> list[Any]:
 def gram_matrix(feature: Any) -> Any:
     b, c, h, w = feature.shape
     flat = feature.reshape(b, c, h * w)
-    return flat.bmm(flat.transpose(1, 2)) / float(c * h * w)
+    return flat.bmm(flat.transpose(1, 2))
 
 
-def style_loss_values(output_features: list[Any], style_features: list[Any]) -> tuple[float, float]:
+def gatys_layer_style_loss(output_feature: Any, style_feature: Any) -> Any:
+    c = output_feature.shape[1]
+    m = output_feature.shape[2] * output_feature.shape[3]
+    diff = gram_matrix(output_feature) - gram_matrix(style_feature)
+    return diff.pow(2).sum() / float(4 * (c**2) * (m**2))
+
+
+def style_loss_values(
+    output_gatys_features: list[Any],
+    style_gatys_features: list[Any],
+    output_adain_features: list[Any],
+    style_adain_features: list[Any],
+) -> tuple[float, float]:
     import torch
     import torch.nn.functional as F
 
     gram_losses = []
     adain_losses = []
-    for output_feature, style_feature in zip(output_features, style_features):
-        gram_losses.append(F.mse_loss(gram_matrix(output_feature), gram_matrix(style_feature)))
+    for output_feature, style_feature in zip(output_gatys_features, style_gatys_features):
+        gram_losses.append(gatys_layer_style_loss(output_feature, style_feature) * GATYS_STYLE_LAYER_WEIGHT)
 
+    for output_feature, style_feature in zip(output_adain_features, style_adain_features):
         output_mean = output_feature.mean(dim=(2, 3))
         style_mean = style_feature.mean(dim=(2, 3))
         output_std = output_feature.std(dim=(2, 3), unbiased=False)
@@ -643,15 +666,29 @@ def compute_style_loss(cases: list[EvalCase], args: argparse.Namespace) -> dict[
         }
 
     rows = []
-    style_feature_cache = {}
+    style_gatys_feature_cache = {}
+    style_adain_feature_cache = {}
     with torch.no_grad():
         for case in cases:
-            if case.style_ref not in style_feature_cache:
+            if case.style_ref not in style_gatys_feature_cache:
                 style_tensor = load_style_loss_tensor(case.style_ref, args.style_loss_image_size, device)
-                style_feature_cache[case.style_ref] = extract_vgg_style_features(vgg_features, style_tensor)
+                style_gatys_feature_cache[case.style_ref] = extract_vgg_features(
+                    vgg_features, style_tensor, GATYS_STYLE_LAYER_IDS, use_avg_pool=True
+                )
+                style_adain_feature_cache[case.style_ref] = extract_vgg_features(
+                    vgg_features, style_tensor, ADAIN_STYLE_LAYER_IDS
+                )
             output_tensor = load_style_loss_tensor(case.generated, args.style_loss_image_size, device)
-            output_features = extract_vgg_style_features(vgg_features, output_tensor)
-            gram_loss, adain_loss = style_loss_values(output_features, style_feature_cache[case.style_ref])
+            output_gatys_features = extract_vgg_features(
+                vgg_features, output_tensor, GATYS_STYLE_LAYER_IDS, use_avg_pool=True
+            )
+            output_adain_features = extract_vgg_features(vgg_features, output_tensor, ADAIN_STYLE_LAYER_IDS)
+            gram_loss, adain_loss = style_loss_values(
+                output_gatys_features,
+                style_gatys_feature_cache[case.style_ref],
+                output_adain_features,
+                style_adain_feature_cache[case.style_ref],
+            )
             rows.append(
                 {
                     "prompt": case.prompt,
@@ -667,7 +704,10 @@ def compute_style_loss(cases: list[EvalCase], args: argparse.Namespace) -> dict[
         "status": "ok",
         "rows": rows,
         "image_size": args.style_loss_image_size,
-        "layers": ["relu1_1", "relu2_1", "relu3_1", "relu4_1", "relu5_1"],
+        "layers": GATYS_STYLE_LAYER_NAMES,
+        "style_loss_adain_layers": ADAIN_STYLE_LAYER_NAMES,
+        "style_loss_gram_definition": "sum_l w_l * (1 / (4 * N_l^2 * M_l^2)) * sum_ij((G_l - A_l)^2), with w_l=1/5",
+        "style_loss_gram_pooling": "avg_pooling_used_for_gatys_path",
         "lower_is_better": True,
     }
 
