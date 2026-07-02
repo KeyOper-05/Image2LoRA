@@ -341,62 +341,56 @@ Overall, Image2LoRA provides a middle route between pure prompt-based control an
   \centering
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0055____1019_01_query_0_img_000004_1684018013820_07938481893127348.jpg.jpg}
-    \caption{s0055}
+    \includegraphics[width=\linewidth]{style_selected_9/s0476____0927_01_query_0_img_000004_1684042367739_06188944809307597.jpeg.jpg}
+    \caption{s0476}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0112____1025_01_query_1_img_000156_1683664012862_022263192689277955.jpeg.jpg}
-    \caption{s0112}
+    \includegraphics[width=\linewidth]{style_selected_9/s0576____1024_01_query_2_img_000124_1683008611851_08934705563150587.png.jpg}
+    \caption{s0576}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0129____1110_01_query_2_img_000025_1683693126351_07183911352804041.jpeg.jpg}
-    \caption{s0129}
+    \includegraphics[width=\linewidth]{style_selected_9/s0649____0907_01_query_0_img_000079_1684061483915_009020581314315046.jpg.jpg}
+    \caption{s0649}
   \end{subfigure}
 
   \vspace{0.8em}
 
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0134____1110_01_query_0_img_000083_1683080483399_013692774561724075.jpeg.jpg}
-    \caption{s0134}
+    \includegraphics[width=\linewidth]{style_selected_9/s0692____0908_01_query_2_img_000191_1683796637157_006084158304398146.jpg.jpg}
+    \caption{s0692}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0162____0919_01_query_0_img_000045_1683863628251_0564223797649242.jpeg.jpg}
-    \caption{s0162}
+    \includegraphics[width=\linewidth]{style_selected_9/s0712____0928_01_query_1_img_000010_1683696197497_0606081084925266.jpeg.jpg}
+    \caption{s0712}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0172____1107_01_query_1_img_000018_1683099425957_08968873238001791.jpg.jpg}
-    \caption{s0172}
+    \includegraphics[width=\linewidth]{style_selected_9/s0765____0911_01_query_1_img_000079_1683989093263_0881684526587458.jpeg.jpg}
+    \caption{s0765}
   \end{subfigure}
 
   \vspace{0.8em}
 
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0188____0919_01_query_1_img_000027_1682858602199_07286026440159936.jpeg.jpg}
-    \caption{s0188}
+    \includegraphics[width=\linewidth]{style_selected_9/s1025____1008_01_query_1_img_000176_1683386191468_04977875006311585.jpg.jpg}
+    \caption{s1025}
   \end{subfigure}
   \hfill
   \begin{subfigure}{0.31\linewidth}
     \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0205____1101_01_query_2_img_000020_1683343384788_014901948185305225.jpeg.jpg}
-    \caption{s0205}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}{0.31\linewidth}
-    \centering
-    \includegraphics[width=\linewidth]{sampled_50styles_500pairs_package/style/s0234____0925_01_query_1_img_000086_1682692809469_0651319034038563.jpg.jpg}
-    \caption{s0234}
+    \includegraphics[width=\linewidth]{style_selected_9/s1055____0911_01_query_0_img_000020_1683954116998_03258985136753969.jpeg.jpg}
+    \caption{s1055}
   \end{subfigure}
 
-  \caption{Reference style images used in the batch evaluation. The nine images correspond to the nine style IDs reported in Table~\ref{tab:batch-eval}.}
+  \caption{Selected reference style images used in the appendix. For better visual layout, the images are cropped consistently across all subfigures.}
   \label{fig:batch-eval-style-refs}
 \end{figure}

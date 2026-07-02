@@ -12,6 +12,7 @@ import argparse
 import html
 import json
 import os
+import textwrap
 from collections import OrderedDict
 from pathlib import Path
 from urllib.parse import quote
@@ -41,6 +42,37 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("outputs/batch_eval/visualization.html"),
         help="Output HTML file.",
+    )
+    parser.add_argument(
+        "--formats",
+        nargs="+",
+        choices=("html", "png"),
+        default=("html", "png"),
+        help="Visualization formats to write.",
+    )
+    parser.add_argument(
+        "--png_dir",
+        type=Path,
+        default=Path("outputs/batch_eval/visualization_pages"),
+        help="Output folder for contact sheet PNG pages.",
+    )
+    parser.add_argument(
+        "--prompts_per_page",
+        type=int,
+        default=12,
+        help="Number of prompt rows per PNG page.",
+    )
+    parser.add_argument(
+        "--thumb_size",
+        type=int,
+        default=192,
+        help="Thumbnail size in pixels used before drawing PNG contact sheets.",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=160,
+        help="DPI for PNG contact sheets.",
     )
     parser.add_argument(
         "--generated_dir",
@@ -104,7 +136,7 @@ def remap_path(raw_path: str, local_base: Path | None) -> Path:
 def html_rel_path(path: Path, html_file: Path) -> str:
     rel = os.path.relpath(path, start=html_file.parent)
     rel = rel.replace(os.sep, "/")
-    return quote(rel, safe="/.-_~(),&=+#@!")
+    return quote(rel, safe="/.-_~")
 
 
 def display_rel_path(path: Path) -> str:
@@ -508,6 +540,133 @@ def render_html(
 """
 
 
+def wrap_label(text: str, width: int = 38, max_lines: int = 3) -> str:
+    lines = textwrap.wrap(text, width=width, break_long_words=False, break_on_hyphens=False)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip(". ") + "..."
+    return "\n".join(lines)
+
+
+def read_thumbnail(path: Path, thumb_size: int):
+    from PIL import Image
+
+    image = Image.open(path).convert("RGB")
+    image.thumbnail((thumb_size, thumb_size), Image.Resampling.LANCZOS)
+    return image
+
+
+def load_font(size: int, bold: bool = False):
+    from PIL import ImageFont
+
+    candidates = [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Helvetica Bold.ttf" if bold else "/System/Library/Fonts/Supplemental/Helvetica.ttf",
+        "/Library/Fonts/Arial Bold.ttf" if bold else "/Library/Fonts/Arial.ttf",
+    ]
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def draw_centered_text(draw, box: tuple[int, int, int, int], text: str, font, fill: str) -> None:
+    left, top, right, bottom = box
+    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=4, align="center")
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    x = left + (right - left - width) / 2
+    y = top + (bottom - top - height) / 2
+    draw.multiline_text((x, y), text, font=font, fill=fill, spacing=4, align="center")
+
+
+def render_png_pages(
+    png_dir: Path,
+    styles: list[str],
+    by_prompt: OrderedDict[str, dict[str, dict[str, str]]],
+    prompts_per_page: int,
+    thumb_size: int,
+    dpi: int,
+) -> list[Path]:
+    from PIL import Image, ImageDraw
+
+    if prompts_per_page < 1:
+        raise ValueError("--prompts_per_page must be >= 1")
+
+    png_dir.mkdir(parents=True, exist_ok=True)
+    for old_page in png_dir.glob("page_*.png"):
+        old_page.unlink()
+
+    prompts = list(by_prompt.items())
+    page_paths: list[Path] = []
+    style_count = len(styles)
+    margin = 18
+    header_height = 42
+    label_width = 360
+    gap = 8
+    cell_size = thumb_size
+    cell_pitch = cell_size + gap
+    page_width = margin * 2 + label_width + gap + style_count * cell_pitch
+    header_font = load_font(16, bold=True)
+    style_font = load_font(13, bold=True)
+    prompt_font = load_font(12)
+    small_font = load_font(12, bold=True)
+
+    for page_idx, start in enumerate(range(0, len(prompts), prompts_per_page), start=1):
+        page_prompts = prompts[start : start + prompts_per_page]
+        page_height = margin * 2 + header_height + len(page_prompts) * cell_pitch
+        sheet = Image.new("RGB", (page_width, page_height), "#f6f7f4")
+        draw = ImageDraw.Draw(sheet)
+
+        draw.text((margin, margin + 4), f"Batch Eval Style Grid - page {page_idx:03d}", fill="#1c211b", font=header_font)
+        for col_idx, style in enumerate(styles):
+            x = margin + label_width + gap + col_idx * cell_pitch
+            draw_centered_text(draw, (x, margin + 8, x + cell_size, margin + header_height), style, style_font, "#2f6f61")
+
+        for row_idx, (prompt, style_map) in enumerate(page_prompts):
+            y = margin + header_height + row_idx * cell_pitch
+            prompt_label = f"{start + row_idx + 1:03d}. {wrap_label(prompt, width=42, max_lines=5)}"
+            draw.multiline_text(
+                (margin, y + 8),
+                prompt_label,
+                fill="#1c211b",
+                font=prompt_font,
+                spacing=4,
+            )
+            for col_idx, style in enumerate(styles):
+                x = margin + label_width + gap + col_idx * cell_pitch
+                box = (x, y, x + cell_size, y + cell_size)
+                draw.rectangle(box, fill="#ffffff", outline="#d9dfd5", width=1)
+
+                record = style_map.get(style)
+                if record is None:
+                    draw_centered_text(draw, box, "missing", small_font, "#657066")
+                    continue
+
+                path = Path(record["generated"])
+                if not path.exists():
+                    draw_centered_text(draw, box, "not found", small_font, "#657066")
+                    continue
+
+                try:
+                    image = read_thumbnail(path, thumb_size)
+                except Exception:
+                    draw_centered_text(draw, box, "load failed", small_font, "#657066")
+                    continue
+                paste_x = x + (cell_size - image.width) // 2
+                paste_y = y + (cell_size - image.height) // 2
+                sheet.paste(image, (paste_x, paste_y))
+
+        page_path = png_dir / f"page_{page_idx:03d}.png"
+        sheet.save(page_path, dpi=(dpi, dpi))
+        page_paths.append(page_path)
+        print(f"Wrote {page_path}")
+
+    return page_paths
+
+
 def main() -> None:
     args = parse_args()
     records, manifest = load_records(args.batch_manifest, args.include_all_statuses)
@@ -519,18 +678,37 @@ def main() -> None:
         args.max_prompts,
     )
 
-    output = resolve_project_path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    html_text = render_html(
-        args.title,
-        manifest,
-        output,
-        styles,
-        by_prompt,
-        args.expected_styles,
-    )
-    output.write_text(html_text, encoding="utf-8")
-    print(f"Wrote {output}")
+    if "html" in args.formats:
+        output = resolve_project_path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        html_text = render_html(
+            args.title,
+            manifest,
+            output,
+            styles,
+            by_prompt,
+            args.expected_styles,
+        )
+        output.write_text(html_text, encoding="utf-8")
+        print(f"Wrote {output}")
+    if "png" in args.formats:
+        try:
+            render_png_pages(
+                resolve_project_path(args.png_dir),
+                styles,
+                by_prompt,
+                args.prompts_per_page,
+                args.thumb_size,
+                args.dpi,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name == "PIL":
+                raise SystemExit(
+                    "PNG output requires Pillow. Install it with `pip install pillow`, "
+                    "or run with the project environment that has requirements.txt installed. "
+                    "Use `--formats html` to write only the HTML view."
+                ) from exc
+            raise
     print(f"Prompts: {len(by_prompt)}")
     print(f"Styles: {len(styles)}")
 
