@@ -739,10 +739,14 @@ def summarize_style_loss(metric_result: dict[str, Any]) -> dict[str, Any]:
         )
     summary = {}
     for method, values in sorted(by_method.items()):
+        gram_sum = sum(v["style_loss_gram"] for v in values)
+        adain_sum = sum(v["style_loss_adain"] for v in values)
         summary[method] = {
             "num_images": len(values),
-            "style_loss_gram_mean": sum(v["style_loss_gram"] for v in values) / len(values),
-            "style_loss_adain_mean": sum(v["style_loss_adain"] for v in values) / len(values),
+            "style_loss_gram_sum": gram_sum,
+            "style_loss_gram_mean": gram_sum / len(values),
+            "style_loss_adain_sum": adain_sum,
+            "style_loss_adain_mean": adain_sum / len(values),
         }
     return summary
 

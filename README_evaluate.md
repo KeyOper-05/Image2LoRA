@@ -233,5 +233,6 @@ python scripts/evaluate.py \
 - Lower is better for `style_loss_gram`, `style_loss_adain`, `FID`, `LPIPS`, and `ArtFID`.
 - Higher is better for `SSIM`.
 - `style_loss_gram` follows the original Gatys formula: `sum_l w_l * E_l`, `E_l = 1 / (4 * N_l^2 * M_l^2) * sum_ij((G_l - A_l)^2)`, with VGG `conv1_1` through `conv5_1`, equal layer weight `w_l = 1/5`, and average pooling on the Gatys feature path.
+- `style_loss.csv` stores one row per generated image. JSON summaries report both `*_sum` and `*_mean`; use `*_mean` for caption-count-independent style comparison and `*_sum` only when reproducing an aggregate loss over the whole set.
 - FID is distribution-level and is weak with very small image sets. Use enough generated images and style references when possible.
 - `Style Loss` is computed per generated image against its paired style reference, so it works in the current no-content setting.
